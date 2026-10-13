@@ -1,6 +1,5 @@
 # main.py
-# Nova Universe botunun ana çekirdeği.
-# Hedef: discord.py 2.x ile çalışır, modüler cog yapısı, SQLite veritabanı ve otomatik yükleme.
+# Nova Universe botunun ana çekirdeği (güncellendi: giveaways entry ve poll tabloları eklendi).
 
 import asyncio
 import logging
@@ -17,6 +16,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("nova")
 
 COGS_DIR = Path(__file__).parent / "cogs"
+ASSETS_DIR = Path(__file__).parent / "assets"
+ASSETS_DIR.mkdir(exist_ok=True)
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -88,6 +89,48 @@ def init_db(path: str):
         """
     )
 
+    # Katılımcıları tutan tablo (duplicate önlemek için UNIQUE)
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS giveaway_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            giveaway_id INTEGER,
+            user_id INTEGER,
+            UNIQUE(giveaway_id, user_id)
+        );
+        """
+    )
+
+    # Anket tabloları
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS polls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER,
+            channel_id INTEGER,
+            message_id INTEGER,
+            question TEXT,
+            option_a TEXT,
+            option_b TEXT,
+            image_path TEXT,
+            created_at INTEGER,
+            active INTEGER DEFAULT 1
+        );
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS poll_votes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            poll_id INTEGER,
+            user_id INTEGER,
+            choice TEXT,
+            UNIQUE(poll_id, user_id)
+        );
+        """
+    )
+
     conn.commit()
     return conn
 
@@ -126,11 +169,13 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
 @bot.tree.command(name="kapat", description="Botu kapatır. (Sadece sahip)")
 async def shutdown(interaction: discord.Interaction):
     """Bot sahibine özel güvenli kapatma komutu."""
-    owner_id = int((os_user_id := os.getenv("OWNER_ID", "0"))) if False else 0
-    # Yukarıdaki satır gereksiz; owner kontrolü güvenli bir formda aşağıda yapılacaktır.
-    # Önemli: Railway için OWNER_ID env kullanılır.
-    owner_id = int(os.getenv("OWNER_ID", "0"))
-    if interaction.user.id != owner_id:
+    owner_id = int(os.getenv("OWNER_ID", "0")) if hasattr(__import__('os'), 'getenv') else 0
+    try:
+        import os
+        owner_id = int(os.getenv("OWNER_ID", "0"))
+    except Exception:
+        owner_id = 0
+    if owner_id != 0 and interaction.user.id != owner_id:
         await interaction.response.send_message("Bu komutu sadece bot sahibi kullanabilir.", ephemeral=True)
         return
     await interaction.response.send_message("Bot kapanıyor...", ephemeral=True)
